@@ -213,9 +213,12 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
       <div><input id="addHem" type="search" placeholder="Lägg till hållplats…" autocomplete="off"><ul class="hits" id="hitsHem"></ul></div>
     </section>
 
-    <section class="set-sec">
-      <span class="sheet-label">Från jobbet – station nära jobbet</span>
-      <p class="set-help">T.ex. S:t Eriksplan. Fyll i gångtid från jobbet till perrongen (min) så visar fliken <b>Från jobbet</b> när du ska gå för att hinna bussen hem med så kort väntan som möjligt.</p>
+    <section class="set-sec" id="secWork">
+      <span class="sheet-label">Arbetsplats</span>
+      <label class="sheet-label" for="setPlace" style="text-transform:none;letter-spacing:0">Namn eller adress</label>
+      <input id="setPlace" autocomplete="off" placeholder="T.ex. PwC, Torsgatan 21">
+      <label class="sheet-label" for="addWork" style="text-transform:none;letter-spacing:0;margin-top:4px">Station du åker från</label>
+      <p class="set-help">T.ex. S:t Eriksplan. Fyll i gångtid från arbetsplatsen till perrongen (min) så visar fliken <b>Från jobbet</b> när du ska gå för att hinna bussen hem med så kort väntan som möjligt.</p>
       <ol class="stoplist" id="setWork"></ol>
       <div><input id="addWork" type="search" placeholder="Sök station…" autocomplete="off"><ul class="hits" id="hitsWork"></ul></div>
     </section>
@@ -290,7 +293,7 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
   const DEFAULT = {
     ut:  [{n:"Sandudden", id:3080}, {n:"Sanduddens vägskäl", id:3081}, {n:"Träkvista", id:3065}, {n:"Träkvista idrottsplats", id:3069}],
     hem: [{n:"Sandudden", id:3080}, {n:"Sanduddens vägskäl", id:3081}, {n:"Träkvista", id:3065}, {n:"Träkvista idrottsplats", id:3069}, {n:"Ekvägen", id:3047, r:1}],
-    walk: 4, me: "", to: "", phone: "",
+    walk: 4, me: "", to: "", phone: "", place: "",
     work: null                    // {id, n, w}: station nära jobbet och gångtid dit (min)
   };
 
@@ -322,7 +325,7 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
       }
     }
     c.walk = Number.isFinite(+c.walk) ? Math.max(0, +c.walk) : DEFAULT.walk;
-    ["me","to","phone"].forEach(k => { if(typeof c[k] !== "string") c[k] = ""; });
+    ["me","to","phone","place"].forEach(k => { if(typeof c[k] !== "string") c[k] = ""; });
     c.work = c.work && +c.work.id > 0 && typeof c.work.n === "string" ? {id:+c.work.id, n:c.work.n, w:Math.max(0, +c.work.w || 0)} : null;
     return c;
   }
@@ -562,7 +565,7 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
   function render(){
     $("eyebrow").textContent = tab === "ut" ? "Bussar mot" : tab === "jobb" ? (cfg.work ? "Hem från jobbet via" : "Hemresa") : "Bussar hem från";
     $("heading").textContent = tab === "jobb" ? (cfg.work ? cfg.work.n : "Från jobbet") : "Brommaplan";
-    $("jobbSub").textContent = cfg.work ? cfg.work.n : "Välj under ⚙️";
+    $("jobbSub").textContent = cfg.place || (cfg.work ? cfg.work.n : "Välj under ⚙️");
     $("utSub").textContent = cfg.ut.map(s => s.n).join(" · ");
     document.querySelectorAll(".tab").forEach(b => b.setAttribute("aria-selected", b.dataset.key === tab ? "true" : "false"));
     const board = $("board"); board.textContent = "";
@@ -640,18 +643,19 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
     if(!cfg.work){
       const h = el("p", "hint"); h.style.borderLeftColor = "var(--bus)"; h.append(el("span", "", "🏢"));
       const t = el("span"); t.append(el("b", "", "Var jobbar du? "), document.createTextNode("Välj stationen närmast jobbet och hur lång tid det tar att gå dit, så visar Busbuddy när du ska gå för att få en smidig resa hem."));
-      const b = el("button", "act", "Välj station"); b.type = "button"; b.onclick = openSettings;
+      const b = el("button", "act", "Ställ in"); b.type = "button"; b.onclick = () => openSettings("secWork");
       h.append(t, b); board.appendChild(h);
       return;
     }
     if(!cfg.work.w){
       const h = el("p", "hint"); h.style.borderLeftColor = "var(--accent)"; h.append(el("span", "", "🚶"));
-      const t = el("span"); t.append(el("b", "", "Hur långt har du till " + cfg.work.n + "? "), document.createTextNode("Fyll i gångtiden under ⚙️ så visar appen när du ska gå från jobbet."));
-      h.append(t); board.appendChild(h);
+      const t = el("span"); t.append(el("b", "", "Hur långt har du till " + cfg.work.n + "? "), document.createTextNode("Fyll i gångtiden så visar appen när du ska gå från jobbet."));
+      const b = el("button", "act", "Ställ in"); b.type = "button"; b.onclick = () => openSettings("secWork");
+      h.append(t, b); board.appendChild(h);
     }
     const wc = cache[cfg.work.id], hub = cache[HUB.id];
     const plans = jobPlans();
-    const sec = section("Smidigast hem", plans ? lineList(plans) : "");
+    const sec = section("Smidigast hem" + (cfg.place ? " från " + cfg.place.split(",")[0].trim() : ""), plans ? lineList(plans) : "");
     if(!wc || !hub) sec.appendChild(el("div", "empty", "Hämtar…"));
     else if(wc.err || hub.err) sec.appendChild(el("div", "empty", "SL svarade inte för " + (wc.err ? cfg.work.n : "Brommaplan") + ". Tryck Uppdatera om en stund."));
     else if(!plans || !plans.length) sec.appendChild(el("div", "empty", "Hittar ingen resa via Brommaplan till " + cfg.hem.map(s => s.n).join(", ") + " de närmaste " + FORECAST_MIN + " minuterna."));
@@ -855,22 +859,25 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
   setupSearch("addHem", "hitsHem", "hem", "setHem");
   setupSearch("addWork", "hitsWork", "work", "setWork");
 
-  function openSettings(){
+  function openSettings(focus){
     draft = clone(cfg);
     renderStops("setUt", "ut"); renderStops("setHem", "hem"); renderWork();
     $("setWalk").value = draft.walk; $("setMe").value = draft.me; $("setTo").value = draft.to; $("setPhone").value = draft.phone;
     ["addUt","addHem","addWork"].forEach(id => $(id).value = ""); ["hitsUt","hitsHem","hitsWork"].forEach(id => $(id).textContent = "");
+    $("setPlace").value = draft.place;
     $("setErr").hidden = true; $("shareMsg").hidden = true;
     openDlg("settings");
+    if(typeof focus === "string" && $(focus)) setTimeout(() => { $(focus).scrollIntoView({block:"start"}); if(!draft.place) $("setPlace").focus(); }, 50);
   }
   function readDraft(){
     draft.walk = Math.min(20, Math.max(0, parseInt($("setWalk").value, 10) || 0));
+    draft.place = $("setPlace").value.trim().slice(0, 60);
     draft.me = $("setMe").value.trim(); draft.to = $("setTo").value.trim(); draft.phone = $("setPhone").value.trim();
     if(!draft.ut.length) return "Välj minst en hållplats för utresan.";
     if(!draft.hem.some(s => !s.r)) return "Välj minst en hållplats för hemresan som inte är reserv.";
     return null;
   }
-  $("settingsBtn").onclick = openSettings;
+  $("settingsBtn").onclick = () => openSettings(tab === "jobb" ? "secWork" : null);
   $("setCancel").onclick = () => closeDlg("settings");
   $("setSave").onclick = () => {
     const err = readDraft();
