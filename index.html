@@ -131,6 +131,15 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
 .arr{color:var(--ink);font-family:var(--f-mono);font-weight:700;flex:none}
 .wlab{display:flex;align-items:center;gap:3px;font-size:.75rem;color:var(--muted)}
 .stoplist input.wmin{width:3.25rem;padding:5px 4px;text-align:center}
+.tabs{grid-template-columns:repeat(3,minmax(0,1fr))}
+.tab{font-size:.9375rem}
+.dep.plan .dest-meta{flex-wrap:wrap;white-space:normal;row-gap:2px}
+.dep.plan.best{background:color-mix(in srgb,var(--ok) 9%,transparent)}
+.tline{font-family:var(--f-mono);font-weight:700;color:var(--ink)}
+.chip.wait{color:var(--muted);border:1px solid var(--line)}
+.chip.wait.ok{color:var(--ok);border-color:var(--ok)}
+.chip.res{color:var(--muted);border:1px dashed var(--muted)}
+.hint .act{margin-left:auto;flex:none}
 </style>
 </head>
 <body>
@@ -144,7 +153,8 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
   </header>
 
   <div class="tabs" role="tablist" aria-label="Riktning">
-    <button class="tab" role="tab" id="tab-ut" data-key="ut" type="button">Till Brommaplan<small id="utSub"></small></button>
+    <button class="tab" role="tab" id="tab-ut" data-key="ut" type="button">Utresa<small id="utSub"></small></button>
+    <button class="tab" role="tab" id="tab-jobb" data-key="jobb" type="button">Från jobbet<small id="jobbSub">Välj under ⚙️</small></button>
     <button class="tab" role="tab" id="tab-hem" data-key="hem" type="button">Hem<small>Från Brommaplan</small></button>
   </div>
 
@@ -204,6 +214,13 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
     </section>
 
     <section class="set-sec">
+      <span class="sheet-label">Från jobbet – station nära jobbet</span>
+      <p class="set-help">T.ex. S:t Eriksplan. Fyll i gångtid från jobbet till perrongen (min) så visar fliken <b>Från jobbet</b> när du ska gå för att hinna bussen hem med så kort väntan som möjligt.</p>
+      <ol class="stoplist" id="setWork"></ol>
+      <div><input id="addWork" type="search" placeholder="Sök station…" autocomplete="off"><ul class="hits" id="hitsWork"></ul></div>
+    </section>
+
+    <section class="set-sec">
       <label class="sheet-label" for="setWalk">Gångtid till bussen på Brommaplan</label>
       <p class="set-help"><input id="setWalk" type="number" min="0" max="20" step="1" inputmode="numeric"> minuter från tunnelbanan. Springer man tar det halva tiden.</p>
     </section>
@@ -257,7 +274,7 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
         localStorage.setItem("ride_used", "1");
       }
       const t = p.get("t");
-      history.replaceState(null, "", location.pathname + location.search + (t === "ut" || t === "hem" ? "#" + t : ""));
+      history.replaceState(null, "", location.pathname + location.search + (t === "ut" || t === "hem" || t === "jobb" ? "#" + t : ""));
     }catch(e){}
   }
 
@@ -273,7 +290,8 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
   const DEFAULT = {
     ut:  [{n:"Sandudden", id:3080}, {n:"Sanduddens vägskäl", id:3081}, {n:"Träkvista", id:3065}, {n:"Träkvista idrottsplats", id:3069}],
     hem: [{n:"Sandudden", id:3080}, {n:"Sanduddens vägskäl", id:3081}, {n:"Träkvista", id:3065}, {n:"Träkvista idrottsplats", id:3069}, {n:"Ekvägen", id:3047, r:1}],
-    walk: 4, me: "", to: "", phone: ""
+    walk: 4, me: "", to: "", phone: "",
+    work: null                    // {id, n, w}: station nära jobbet och gångtid dit (min)
   };
 
   const $ = id => document.getElementById(id);
@@ -287,6 +305,7 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
   const minutesUntil = iso => { const d = new Date(iso); return isNaN(d) ? null : Math.round((d - Date.now())/60000); };
   const upcoming = d => { const m = minutesUntil(d.e); return m===null || m >= -1; };
   const later = (a, b) => new Date(a.e) > new Date(b.e);
+  const isBus = d => !d.m || d.m === "BUS";
   const sameTrip = (a, b) => a.l === b.l && !!a.j && a.j === b.j;   // tur-id är bara unikt per linje
 
   // ---------- Inställningar ----------
@@ -304,6 +323,7 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
     }
     c.walk = Number.isFinite(+c.walk) ? Math.max(0, +c.walk) : DEFAULT.walk;
     ["me","to","phone"].forEach(k => { if(typeof c[k] !== "string") c[k] = ""; });
+    c.work = c.work && +c.work.id > 0 && typeof c.work.n === "string" ? {id:+c.work.id, n:c.work.n, w:Math.max(0, +c.work.w || 0)} : null;
     return c;
   }
   let cfg = loadCfg();
@@ -346,14 +366,16 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
 
   // ---------- SL ----------
   const cache = {};                 // site-id → {dep, dev, tot, err}
-  const last = {ut:0, hem:0};
+  const last = {ut:0, hem:0, jobb:0};
   let tab = pickTab();
   let busy = false;
 
   function pickTab(){
     const h = (location.hash || "").replace("#","");
-    if(h === "ut" || h === "hem") return h;
-    return new Date().getHours() < 12 ? "ut" : "hem";
+    if(h === "ut" || h === "hem" || h === "jobb") return h;
+    const now = new Date(), hr = now.getHours(), wd = now.getDay() >= 1 && now.getDay() <= 5;
+    if(hr < 12) return "ut";
+    return cfg.work && wd && hr < 19 ? "jobb" : "hem";
   }
 
   async function departures(id){
@@ -365,7 +387,8 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
       j = await r.json();
       if((j.departures||[]).length) break;
     }
-    const dep = (j.departures||[]).filter(d => !d.line || !d.line.transport_mode || d.line.transport_mode === "BUS").map(d => ({
+    const dep = (j.departures||[]).map(d => ({
+      m: (d.line && d.line.transport_mode) || "",
       l: d.line ? String(d.line.designation) : "", t: d.destination || "", s: d.display || "",
       e: d.expected || d.scheduled || "", p: d.scheduled || "", dir: d.direction_code || 0,
       sp: (d.stop_point && d.stop_point.designation) || "", st: d.state || "",
@@ -375,12 +398,17 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
     return {id, dep, dev, tot: dep.length};
   }
 
+  function tabIds(t){
+    const stops = t === "ut" ? cfg.ut : t === "hem" ? cfg.hem : cfg.work ? cfg.hem.concat(cfg.work) : [];
+    return [...new Set(stops.map(s => s.id).concat(HUB.id))];
+  }
+
   async function refresh(){
     if(busy) return;
     const t = tab;
     busy = true; setStatus("busy");
     try{
-      const ids = [...new Set((t === "ut" ? cfg.ut : cfg.hem).map(s => s.id).concat(HUB.id))];
+      const ids = tabIds(t);
       const res = await Promise.all(ids.map(async id => {
         try{ return await departures(id); }
         catch(e){ return {id, err:e.message, dep:[], tot:0}; }
@@ -417,7 +445,7 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
     return cfg.ut.map(s => {
       const c = cache[s.id];
       if(!c || c.err || c.tot === 0) return {s, c};
-      const all = c.dep.filter(upcoming).filter(d => {
+      const all = c.dep.filter(isBus).filter(upcoming).filter(d => {
         const k = "u|" + s.id + "|" + d.l + "|" + d.dir;
         if(/brommaplan/i.test(d.t)){ teach(k, 1); return true; }
         if(hub && hub.dep.some(h => sameTrip(h, d) && later(h, d))){ teach(k, 1); return true; }
@@ -449,7 +477,7 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
     if(!hub || hub.err) return null;
     const order = cfg.hem.filter(s => !s.r).concat(cfg.hem.filter(s => s.r));
     const out = [];
-    hub.dep.filter(upcoming).forEach(d => {
+    hub.dep.filter(isBus).filter(upcoming).forEach(d => {
       if(/brommaplan/i.test(d.t)) return;
       let hit = null;
       for(const s of order){
@@ -471,6 +499,56 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
     return out;
   }
 
+  // Från jobbet: tåg (eller buss) från jobbstationen som når Brommaplan, kopplat till
+  // bussarna hem. För varje buss väljs det sista tåget man hinner byta från = kortast väntan.
+  function jobTrips(){
+    const w = cfg.work, c = w && cache[w.id], hub = cache[HUB.id];
+    if(!c || c.err || !hub || hub.err) return null;
+    const out = [];
+    c.dep.filter(upcoming).forEach(d => {
+      if(d.st === "CANCELLED") return;
+      const k = "w|" + w.id + "|" + d.l + "|" + d.dir;
+      const h = d.j ? hub.dep.find(x => sameTrip(x, d) && later(x, d) && new Date(x.e) - new Date(d.e) < 60*60000) : null;
+      if(h){
+        teach(k, Math.round((new Date(h.e) - new Date(d.e))/60000));
+        out.push(Object.assign({}, d, {arr:new Date(h.e), live:true}));
+      } else if(typeof learn[k] === "number" && minutesUntil(d.e) > 30){
+        out.push(Object.assign({}, d, {arr:new Date(new Date(d.e).getTime() + learn[k]*60000), live:false}));
+      }
+    });
+    return out.sort((a, b) => new Date(a.e) - new Date(b.e));
+  }
+
+  function goState(tr){
+    const w = +cfg.work.w;
+    const left = (new Date(tr.e) - Date.now())/60000 - w;
+    const leaveAt = new Date(new Date(tr.e).getTime() - w*60000);
+    if(left > 1) return {k:"walk", txt:"Gå " + hm(leaveAt), left, leaveAt};
+    if(left > -0.5) return {k:"run", txt:"Gå nu", left, leaveAt};
+    if(w && left > -w/2) return {k:"run", txt:"Spring", left, leaveAt};
+    return {k:"miss", txt:"Hinner inte", left, leaveAt};
+  }
+
+  function jobPlans(){
+    const trips = jobTrips(), buses = hemDeps();
+    if(!trips || !buses) return null;
+    const prio = s => { const ord = cfg.hem.filter(x => !x.r).concat(cfg.hem.filter(x => x.r)); return ord.findIndex(x => x.id === s.id); };
+    const plans = [];
+    buses.forEach(b => {
+      if(b.st === "CANCELLED") return;
+      const okTrips = trips.filter(t => t.arr.getTime() + cfg.walk*60000 <= new Date(b.e).getTime());
+      const tr = okTrips[okTrips.length - 1];
+      if(!tr) return;
+      const gs = goState(tr);
+      if(gs.k === "miss") return;
+      plans.push(Object.assign({}, b, {tr, gs, wait:Math.max(0, Math.round((new Date(b.e) - tr.arr)/60000 - cfg.walk)), prio:prio(b.alight)}));
+    });
+    // Ta bort alternativ där ett annat låter en gå lika sent eller senare och ändå komma fram lika tidigt till en lika bra hållplats.
+    const best = plans.filter(p => !plans.some(q => q !== p && q.gs.leaveAt >= p.gs.leaveAt && q.at <= p.at && q.prio <= p.prio &&
+      (q.gs.leaveAt > p.gs.leaveAt || q.at < p.at || q.prio < p.prio || new Date(q.e) < new Date(p.e))));
+    return best.sort((a, b) => a.gs.leaveAt - b.gs.leaveAt || a.at - b.at);
+  }
+
   function reachState(d){
     const mg = (new Date(d.e) - Date.now())/60000, w = cfg.walk;
     if(!w) return null;
@@ -482,8 +560,9 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
   const lineList = deps => [...new Set(deps.map(d => d.l))].sort((a,b) => a.localeCompare(b, "sv", {numeric:true})).join(" · ");
 
   function render(){
-    $("eyebrow").textContent = tab === "ut" ? "Bussar mot" : "Bussar hem från";
-    $("heading").textContent = "Brommaplan";
+    $("eyebrow").textContent = tab === "ut" ? "Bussar mot" : tab === "jobb" ? (cfg.work ? "Hem från jobbet via" : "Hemresa") : "Bussar hem från";
+    $("heading").textContent = tab === "jobb" ? (cfg.work ? cfg.work.n : "Från jobbet") : "Brommaplan";
+    $("jobbSub").textContent = cfg.work ? cfg.work.n : "Välj under ⚙️";
     $("utSub").textContent = cfg.ut.map(s => s.n).join(" · ");
     document.querySelectorAll(".tab").forEach(b => b.setAttribute("aria-selected", b.dataset.key === tab ? "true" : "false"));
     const board = $("board"); board.textContent = "";
@@ -495,7 +574,7 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
       const t = el("span"); t.append(el("b", "", "Bor du någon annanstans? "), document.createTextNode("Tryck på ⚙️ och välj dina egna hållplatser."));
       h.append(t); board.appendChild(h);
     }
-    if(tab === "ut") renderUt(board); else renderHem(board);
+    if(tab === "ut") renderUt(board); else if(tab === "jobb") renderJobb(board); else renderHem(board);
     flushLearn();
   }
 
@@ -557,9 +636,39 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
     board.appendChild(rsec);
   }
 
+  function renderJobb(board){
+    if(!cfg.work){
+      const h = el("p", "hint"); h.style.borderLeftColor = "var(--bus)"; h.append(el("span", "", "🏢"));
+      const t = el("span"); t.append(el("b", "", "Var jobbar du? "), document.createTextNode("Välj stationen närmast jobbet och hur lång tid det tar att gå dit, så visar Busbuddy när du ska gå för att få en smidig resa hem."));
+      const b = el("button", "act", "Välj station"); b.type = "button"; b.onclick = openSettings;
+      h.append(t, b); board.appendChild(h);
+      return;
+    }
+    if(!cfg.work.w){
+      const h = el("p", "hint"); h.style.borderLeftColor = "var(--accent)"; h.append(el("span", "", "🚶"));
+      const t = el("span"); t.append(el("b", "", "Hur långt har du till " + cfg.work.n + "? "), document.createTextNode("Fyll i gångtiden under ⚙️ så visar appen när du ska gå från jobbet."));
+      h.append(t); board.appendChild(h);
+    }
+    const wc = cache[cfg.work.id], hub = cache[HUB.id];
+    const plans = jobPlans();
+    const sec = section("Smidigast hem", plans ? lineList(plans) : "");
+    if(!wc || !hub) sec.appendChild(el("div", "empty", "Hämtar…"));
+    else if(wc.err || hub.err) sec.appendChild(el("div", "empty", "SL svarade inte för " + (wc.err ? cfg.work.n : "Brommaplan") + ". Tryck Uppdatera om en stund."));
+    else if(!plans || !plans.length) sec.appendChild(el("div", "empty", "Hittar ingen resa via Brommaplan till " + cfg.hem.map(s => s.n).join(", ") + " de närmaste " + FORECAST_MIN + " minuterna."));
+    else {
+      const ol = el("ol", "deps");
+      plans.slice(0, 6).forEach((p, i) => { const li = row(p, {ride:true, plan:true}); if(i === 0) li.classList.add("best"); ol.appendChild(li); });
+      sec.appendChild(ol);
+      sec.appendChild(el("div", "devs", "Tiden till höger är när du ska gå från jobbet. Väntan = tid vid busshållplatsen på Brommaplan efter " + cfg.walk + " min byte."));
+    }
+    const devs = [...new Set(((wc && wc.dev) || []).concat((hub && hub.dev) || []))].slice(0, 3);
+    if(devs.length) sec.appendChild(el("div", "devs", "⚠ " + devs.join(" · ")));
+    board.appendChild(sec);
+  }
+
   function row(d, opt){
-    const li = el("li", "dep");
-    const rs = opt.ride ? reachState(d) : d.from ? leaveState(d) : null;
+    const li = el("li", "dep" + (opt.plan ? " plan" : ""));
+    const rs = opt.plan ? d.gs : opt.ride ? reachState(d) : d.from ? leaveState(d) : null;
     if(rs && rs.k === "miss") li.classList.add("miss");
     const dest = el("div", "dest");
     // Rad 1: hållplatsen som gäller för mig (av- eller påstigning), rad 2: status och detaljer.
@@ -573,8 +682,15 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
     } else { dn.append(el("span", "nm", d.t)); dn.title = d.t; }
     dest.append(dn);
     const dm = el("div", "dest-meta");
-    if(rs) dm.appendChild(el("span", "chip " + rs.k, rs.txt));
+    if(rs && !(opt.plan && rs.k === "walk")) dm.appendChild(el("span", "chip " + rs.k, rs.txt));
     if(d.alight) dm.appendChild(el("span", "arr", "→ " + (d.live ? "" : "~") + hm(d.at)));
+    if(opt.plan){
+      const tl = el("span"); tl.append(el("span", "tline", (d.tr.m === "METRO" ? "T" : d.tr.m === "BUS" ? "Buss " : "") + d.tr.l + " " + hm(new Date(d.tr.e))));
+      tl.title = cfg.work.n + " " + hm(new Date(d.tr.e)) + " → Brommaplan " + (d.tr.live ? "" : "ca ") + hm(d.tr.arr) + " · mot " + d.tr.t;
+      dm.appendChild(tl);
+      dm.appendChild(el("span", "chip wait" + (d.wait <= 3 ? " ok" : ""), d.wait <= 1 ? "Direkt byte" : "Vänta " + d.wait + " min"));
+      if(d.reserve) dm.appendChild(el("span", "chip res", "Reserv"));
+    }
     if(d.from && !/^brommaplan$/i.test(shortDest)) dm.appendChild(el("span", "", "mot " + shortDest));
     const delay = (d.e && d.p) ? Math.round((new Date(d.e) - new Date(d.p))/60000) : 0;
     if(delay >= 2) dm.appendChild(el("span", "late", "+" + delay + " min"));
@@ -582,13 +698,14 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
     if(dm.children.length) dest.append(dm);
 
     const t = el("div", "time");
-    const m = minutesUntil(d.e);
+    const m = opt.plan ? Math.round(d.gs.left) : minutesUntil(d.e);
     const mins = el("div", "mins");
-    if((m !== null && m <= 0) || d.s === "Nu") mins.appendChild(el("span", "now", "Nu"));
+    if((m !== null && m <= 0) || (!opt.plan && d.s === "Nu")) mins.appendChild(el("span", "now", "Nu"));
     else if(m !== null && m < 60){ mins.textContent = m; mins.appendChild(el("small", "", "min")); }
-    else mins.textContent = d.e ? hm(new Date(d.e)) : d.s;
+    else mins.textContent = opt.plan ? hm(d.gs.leaveAt) : d.e ? hm(new Date(d.e)) : d.s;
     t.append(mins);
-    if(m !== null && m < 60 && d.e) t.append(el("div", "at", hm(new Date(d.e))));
+    if(opt.plan){ if(m > 0 && m < 60) t.append(el("div", "at", "gå " + hm(d.gs.leaveAt))); }
+    else if(m !== null && m < 60 && d.e) t.append(el("div", "at", hm(new Date(d.e))));
     li.append(el("div", "badge", d.l || "–"), dest, t);
     if(opt.ride && d.alight){
       li.classList.add("pick"); li.tabIndex = 0; li.setAttribute("role", "button");
@@ -690,6 +807,20 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
     if(!arr.length) ol.append(el("li", "", "Inga hållplatser valda"));
   }
 
+  function renderWork(){
+    const ol = $("setWork"); ol.textContent = "";
+    const s = draft.work;
+    if(!s){ ol.append(el("li", "", "Ingen station vald")); return; }
+    const li = el("li");
+    li.append(el("span", "num", "🏢"), el("span", "nm", s.n));
+    const w = el("input", "wmin"); w.type = "number"; w.min = "0"; w.max = "30"; w.inputMode = "numeric"; w.placeholder = "–";
+    w.value = s.w ? String(s.w) : ""; w.setAttribute("aria-label", "Gångtid från jobbet till " + s.n + " i minuter");
+    w.oninput = () => { const v = parseInt(w.value, 10); s.w = v > 0 ? Math.min(30, v) : 0; };
+    const wl = el("label", "wlab"); wl.append(w, document.createTextNode("min")); li.append(wl);
+    const b = el("button", "ib", "✕"); b.type = "button"; b.setAttribute("aria-label", "Ta bort " + s.n); b.onclick = () => { draft.work = null; renderWork(); };
+    li.append(b); ol.append(li);
+  }
+
   function setupSearch(inputId, hitsId, key, listId){
     let timer = null, seq = 0;
     const inp = $(inputId), hits = $(hitsId);
@@ -709,6 +840,7 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
             const short = l.disassembledName || String(l.name).split(", ").pop();
             const li = el("li"); const b = el("button", "", String(l.name)); b.type = "button";
             b.onclick = () => {
+              if(key === "work"){ draft.work = {id, n:short, w:draft.work && draft.work.id === id ? draft.work.w : 0}; inp.value = ""; hits.textContent = ""; renderWork(); return; }
               if(!draft[key].some(s => s.id === id) && draft[key].length < 8) draft[key].push({id, n:short});
               inp.value = ""; hits.textContent = ""; renderStops(listId, key);
             };
@@ -721,12 +853,13 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
   }
   setupSearch("addUt", "hitsUt", "ut", "setUt");
   setupSearch("addHem", "hitsHem", "hem", "setHem");
+  setupSearch("addWork", "hitsWork", "work", "setWork");
 
   function openSettings(){
     draft = clone(cfg);
-    renderStops("setUt", "ut"); renderStops("setHem", "hem");
+    renderStops("setUt", "ut"); renderStops("setHem", "hem"); renderWork();
     $("setWalk").value = draft.walk; $("setMe").value = draft.me; $("setTo").value = draft.to; $("setPhone").value = draft.phone;
-    ["addUt","addHem"].forEach(id => $(id).value = ""); ["hitsUt","hitsHem"].forEach(id => $(id).textContent = "");
+    ["addUt","addHem","addWork"].forEach(id => $(id).value = ""); ["hitsUt","hitsHem","hitsWork"].forEach(id => $(id).textContent = "");
     $("setErr").hidden = true; $("shareMsg").hidden = true;
     openDlg("settings");
   }
@@ -762,7 +895,7 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
   // ---------- Händelser ----------
   document.querySelectorAll(".tab").forEach(b => b.addEventListener("click", () => {
     tab = b.dataset.key; render(); setStatus();
-    const missing = (tab === "ut" ? cfg.ut : cfg.hem).some(s => !cache[s.id]);
+    const missing = tabIds(tab).some(id => !cache[id]);
     if(missing || !last[tab] || Date.now() - last[tab] > 30000) refresh();
   }));
   $("refreshBtn").onclick = () => refresh();
