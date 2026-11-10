@@ -632,7 +632,6 @@ ol.plans{list-style:none;margin:0;padding:0}
     } else {
       const ol = el("ol", "deps"); deps.slice(0, 8).forEach(d => ol.appendChild(row(d, {via:true}))); sec.appendChild(ol);
     }
-    if(failed.length && failed.length < secs.length) sec.appendChild(el("div", "devs", "SL svarade inte för " + failed.map(x => x.s.n).join(", ") + "."));
     board.appendChild(sec);
   }
 
