@@ -259,7 +259,8 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
   // Flyttad till busbuddy.pages.dev. Skicka vidare från github.io och ta med sparade
   // inställningar i #-delen (den skickas aldrig till någon server).
   const NEW_HOME = "https://busbuddy.pages.dev/";
-  if(/\.github\.io$/i.test(location.hostname)){
+  const REDIRECT = false;   // Av tills busbuddy.pages.dev publiceras från repot (Cloudflare är inte kopplat till GitHub än)
+  if(REDIRECT && /\.github\.io$/i.test(location.hostname)){
     let carry = "";
     try{
       const c = localStorage.getItem("bv_cfg");
