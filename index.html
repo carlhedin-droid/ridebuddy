@@ -131,8 +131,9 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
 .arr{color:var(--ink);font-family:var(--f-mono);font-weight:700;flex:none}
 .wlab{display:flex;align-items:center;gap:3px;font-size:.75rem;color:var(--muted)}
 .stoplist input.wmin{width:3.25rem;padding:5px 4px;text-align:center}
-.tabs{grid-template-columns:repeat(3,minmax(0,1fr))}
-.tab{font-size:.9375rem}
+.seg{display:flex;gap:4px;background:var(--tab-bg);border-radius:9px;padding:3px;margin:0 0 12px}
+.seg button{flex:1;font:inherit;font-size:.875rem;font-weight:600;color:var(--muted);background:transparent;border:0;border-radius:6px;padding:6px 8px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
 .dep.plan .dest-meta{flex-wrap:wrap;white-space:normal;row-gap:2px}
 .dep.plan.best{background:color-mix(in srgb,var(--ok) 9%,transparent)}
 .tline{font-family:var(--f-mono);font-weight:700;color:var(--ink)}
@@ -182,8 +183,7 @@ ol.plans{list-style:none;margin:0;padding:0}
 
   <div class="tabs" role="tablist" aria-label="Riktning">
     <button class="tab" role="tab" id="tab-ut" data-key="ut" type="button">Utresa<small id="utSub"></small></button>
-    <button class="tab" role="tab" id="tab-jobb" data-key="jobb" type="button">Från jobbet<small id="jobbSub">Välj under ⚙️</small></button>
-    <button class="tab" role="tab" id="tab-hem" data-key="hem" type="button">Hem<small>Från Brommaplan</small></button>
+    <button class="tab" role="tab" id="tab-hem" data-key="hem" type="button">Hemresa<small id="hemSub">Från Brommaplan</small></button>
   </div>
 
   <div class="status">
@@ -246,7 +246,7 @@ ol.plans{list-style:none;margin:0;padding:0}
       <label class="sheet-label" for="setPlace" style="text-transform:none;letter-spacing:0">Namn eller adress</label>
       <input id="setPlace" autocomplete="off" placeholder="T.ex. PwC, Torsgatan 21">
       <label class="sheet-label" for="addWork" style="text-transform:none;letter-spacing:0;margin-top:4px">Station du åker från</label>
-      <p class="set-help">T.ex. S:t Eriksplan. Fyll i gångtid från arbetsplatsen till perrongen (min) så visar fliken <b>Från jobbet</b> när du ska gå för att hinna bussen hem med så kort väntan som möjligt.</p>
+      <p class="set-help">T.ex. S:t Eriksplan. Fyll i gångtid från arbetsplatsen till perrongen (min) så visar <b>Hemresa → Från jobbet</b> när du ska gå för att hinna bussen hem med så kort väntan som möjligt.</p>
       <ol class="stoplist" id="setWork"></ol>
       <div><input id="addWork" type="search" placeholder="Sök station…" autocomplete="off"><ul class="hits" id="hitsWork"></ul></div>
     </section>
@@ -400,6 +400,7 @@ ol.plans{list-style:none;margin:0;padding:0}
   const cache = {};                 // site-id → {dep, dev, tot, err}
   const last = {ut:0, hem:0, jobb:0};
   let tab = pickTab();
+  let hemMode = tab === "jobb" ? "jobb" : "hem";   // senaste läget inom Hemresa
   let busy = false;
 
   function pickTab(){
@@ -593,17 +594,26 @@ ol.plans{list-style:none;margin:0;padding:0}
   function render(){
     $("eyebrow").textContent = tab === "ut" ? "Bussar mot" : tab === "jobb" ? (cfg.work ? "Hem från jobbet via" : "Hemresa") : "Bussar hem från";
     $("heading").textContent = tab === "jobb" ? (cfg.work ? cfg.work.n : "Från jobbet") : "Brommaplan";
-    $("jobbSub").textContent = cfg.place || (cfg.work ? cfg.work.n : "Välj under ⚙️");
+    $("hemSub").textContent = tab === "jobb" ? "Från jobbet" : "Från Brommaplan";
     $("utSub").textContent = cfg.ut.map(s => s.n).join(" · ");
-    document.querySelectorAll(".tab").forEach(b => b.setAttribute("aria-selected", b.dataset.key === tab ? "true" : "false"));
+    document.querySelectorAll(".tab").forEach(b => b.setAttribute("aria-selected", b.dataset.key === (tab === "jobb" ? "hem" : tab) ? "true" : "false"));
     const board = $("board"); board.textContent = "";
-    board.setAttribute("aria-labelledby", "tab-" + tab);
+    board.setAttribute("aria-labelledby", "tab-" + (tab === "jobb" ? "hem" : tab));
 
     if(!store.get("bv_cfg")){
       const h = el("p", "hint"); h.style.borderLeftColor = "var(--bus)";
       h.append(el("span", "", "⚙️"));
       const t = el("span"); t.append(el("b", "", "Bor du någon annanstans? "), document.createTextNode("Tryck på ⚙️ och välj dina egna hållplatser."));
       h.append(t); board.appendChild(h);
+    }
+    if(tab !== "ut" && (cfg.work || tab === "jobb")){
+      const seg = el("div", "seg"); seg.setAttribute("role", "group"); seg.setAttribute("aria-label", "Hemresa från");
+      [["jobb", "Från jobbet"], ["hem", "Från Brommaplan"]].forEach(([k, txt]) => {
+        const b = el("button", "", txt); b.type = "button"; b.setAttribute("aria-pressed", tab === k ? "true" : "false");
+        b.onclick = () => { if(tab === k) return; tab = hemMode = k; render(); setStatus(); if(tabIds(tab).some(id => !cache[id]) || !last[tab] || Date.now() - last[tab] > 30000) refresh(); };
+        seg.append(b);
+      });
+      board.appendChild(seg);
     }
     if(tab === "ut") renderUt(board); else if(tab === "jobb") renderJobb(board); else renderHem(board);
     flushLearn();
@@ -951,7 +961,7 @@ ol.plans{list-style:none;margin:0;padding:0}
 
   // ---------- Händelser ----------
   document.querySelectorAll(".tab").forEach(b => b.addEventListener("click", () => {
-    tab = b.dataset.key; render(); setStatus();
+    tab = b.dataset.key === "hem" && cfg.work ? hemMode : b.dataset.key; render(); setStatus();
     const missing = tabIds(tab).some(id => !cache[id]);
     if(missing || !last[tab] || Date.now() - last[tab] > 30000) refresh();
   }));
@@ -961,7 +971,7 @@ ol.plans{list-style:none;margin:0;padding:0}
   setInterval(() => { tick(); if(!busy && last[tab]){ render(); setStatus(); } }, 15000);
   setInterval(() => { if(!document.hidden) refresh(); }, REFRESH_MS);
   document.addEventListener("visibilitychange", () => {
-    if(!document.hidden && (!last[tab] || Date.now() - last[tab] > 30000)){ if(!last[tab]) tab = pickTab(); render(); refresh(); }
+    if(!document.hidden && (!last[tab] || Date.now() - last[tab] > 30000)){ if(!last[tab]){ tab = pickTab(); if(tab !== "ut") hemMode = tab; } render(); refresh(); }
   });
 
   // ---------- Självuppdatering ----------
