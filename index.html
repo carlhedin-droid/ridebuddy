@@ -164,6 +164,9 @@ ol.plans{list-style:none;margin:0;padding:0}
 .pc-legs .badge{display:inline-block;font-size:.8125rem;padding:1px 6px 0;margin-right:4px}
 .pc-legs .badge.t{background:var(--ok)}
 .pc-foot{display:flex;justify-content:flex-end}
+.pc-first{font-size:.9375rem;display:flex;align-items:center;gap:4px;white-space:nowrap}
+.pc-first .badge{display:inline-block;font-size:.875rem;padding:2px 7px 0;background:var(--ok)}
+.pc-first .tm{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 .pc-foot button{font:inherit;font-size:.8125rem;font-weight:700;color:var(--ink);background:transparent;border:1px solid #25D366;border-radius:8px;padding:5px 10px;cursor:pointer}
 </style>
 </head>
@@ -711,20 +714,10 @@ ol.plans{list-style:none;margin:0;padding:0}
     R.append(el("span", "pc-lab", "Restid"), tb, rs);
     top.append(L, R); li.append(top);
 
-    const legs = el("ol", "pc-legs");
-    const leg = (ic, nodes, tm, cls) => { const r = el("li"); r.append(el("span", "ic", ic)); const t = el("span", "tx" + (cls ? " " + cls : "")); t.append(...nodes); r.append(t, el("span", "tm", tm || "")); legs.append(r); };
-    const txt = s => document.createTextNode(s);
-    if(+cfg.work.w) leg("🚶", [txt("Gå till " + cfg.work.n + " · " + cfg.work.w + " min")], "", "mut");
-    const tb2 = el("span", "badge t", (p.tr.m === "METRO" ? "T" : "") + p.tr.l);
-    leg(p.tr.m === "METRO" ? "🚇" : "🚌", [tb2, txt("→ Brommaplan " + (p.tr.live ? "" : "ca ") + hm(p.tr.arr))], hm(new Date(p.tr.e)));
-    const wt = el("span", p.wait <= 3 ? "ok" : "", p.wait <= 1 ? "direkt byte" : "vänta " + p.wait + " min");
-    leg("⏱", [txt("Byte " + cfg.walk + " min · "), wt], "", "mut");
-    const bb = el("span", "badge", p.l);
-    leg("🚌", [bb, txt("→ " + p.alight.n + " " + (p.live ? "" : "ca ") + hm(p.at))], hm(new Date(p.e)));
-    li.append(legs);
-
-    const foot = el("div", "pc-foot");
-    const b = el("button", "", "🚗 Be om skjuts"); b.type = "button"; b.onclick = () => openRide(p);
+    const first = el("div", "pc-first");
+    first.append(el("span", "badge t", (p.tr.m === "METRO" ? "T" : "") + p.tr.l), document.createTextNode(" avgår "), el("b", "tm", hm(new Date(p.tr.e))));
+    const foot = el("div", "pc-foot"); foot.style.justifyContent = "space-between"; foot.style.alignItems = "center"; foot.append(first);
+    const b = el("button", "", "🚗 Skjuts"); b.type = "button"; b.onclick = () => openRide(p);
     b.setAttribute("aria-label", "Be om skjuts från buss " + p.l + " till " + p.alight.n);
     foot.append(b); li.append(foot);
     return li;
