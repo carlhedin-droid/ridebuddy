@@ -700,7 +700,10 @@ ol.plans{list-style:none;margin:0;padding:0}
 
   function planCard(p, best){
     const li = el("li", "pc" + (best ? " best" : ""));
-    const leave = p.gs.leaveAt, left = Math.round(p.gs.left), total = Math.round((p.at - leave)/60000);
+    // Sista promenaden: samma gångtid som hemifrån till hållplatsen (inställd för utresan).
+    const u = cfg.ut.find(s => s.id === p.alight.id), lastWalk = u && +u.w ? +u.w : 0;
+    const home = new Date(p.at.getTime() + lastWalk*60000);
+    const leave = p.gs.leaveAt, left = Math.round(p.gs.left), total = Math.round((home - leave)/60000);
     const top = el("div", "pc-top");
     const L = el("div");
     L.append(el("span", "pc-lab", best ? "Gå från jobbet" : "Eller gå"), el("div", "pc-big", left <= 0 ? (p.gs.k === "run" && p.gs.txt === "Spring" ? "Spring!" : "Nu") : hm(leave)));
@@ -710,7 +713,8 @@ ol.plans{list-style:none;margin:0;padding:0}
     L.append(sub);
     const R = el("div", "pc-tot");
     const tb = el("div", "pc-big", String(total)); tb.append(el("small", "", "min"));
-    const rs = el("div", "pc-sub"); rs.append(document.createTextNode("framme "), el("b", "", (p.live ? "" : "ca ") + hm(p.at)));
+    const rs = el("div", "pc-sub"); rs.append(document.createTextNode(lastWalk ? "hemma " : "framme "), el("b", "", (p.live ? "" : "ca ") + hm(home)));
+    rs.title = lastWalk ? "Bussen är vid " + p.alight.n + " " + hm(p.at) + ", sedan " + lastWalk + " min promenad" : "Framme vid " + p.alight.n;
     R.append(el("span", "pc-lab", "Restid"), tb, rs);
     top.append(L, R); li.append(top);
 
