@@ -426,8 +426,7 @@ ol.plans{list-style:none;margin:0;padding:0}
       sp: (d.stop_point && d.stop_point.designation) || "", st: d.state || "",
       j: d.journey && d.journey.id ? String(d.journey.id) : null
     }));
-    const dev = (j.stop_deviations||[]).map(x => x.message).filter(Boolean).slice(0,2);
-    return {id, dep, dev, tot: dep.length};
+    return {id, dep, tot: dep.length};
   }
 
   function tabIds(t){
@@ -634,8 +633,6 @@ ol.plans{list-style:none;margin:0;padding:0}
       const ol = el("ol", "deps"); deps.slice(0, 8).forEach(d => ol.appendChild(row(d, {via:true}))); sec.appendChild(ol);
     }
     if(failed.length && failed.length < secs.length) sec.appendChild(el("div", "devs", "SL svarade inte för " + failed.map(x => x.s.n).join(", ") + "."));
-    const devs = [...new Set(secs.flatMap(x => (x.c && x.c.dev) || []))].slice(0, 3);
-    if(devs.length) sec.appendChild(el("div", "devs", "⚠ " + devs.join(" · ")));
     board.appendChild(sec);
   }
 
@@ -655,7 +652,6 @@ ol.plans{list-style:none;margin:0;padding:0}
     else if(hub.tot === 0) sec.appendChild(el("div", "empty", "SL svarar tomt för Brommaplan just nu. Tryck Uppdatera om en stund."));
     else if(!ord.length) sec.appendChild(el("div", "empty", "Inga bussar till " + cfg.hem.filter(s => !s.r).map(s => s.n).join(", ") + " de närmaste " + FORECAST_MIN + " minuterna."));
     else { const ol = el("ol", "deps"); ord.slice(0,6).forEach(d => ol.appendChild(row(d, {ride:true}))); sec.appendChild(ol); }
-    if(hub && hub.dev && hub.dev.length) sec.appendChild(el("div", "devs", "⚠ " + hub.dev.join(" · ")));
     board.appendChild(sec);
 
     if(!cfg.hem.some(s => s.r) || !all) return;
@@ -693,8 +689,6 @@ ol.plans{list-style:none;margin:0;padding:0}
       plans.slice(0, 4).forEach((p, i) => ol.appendChild(planCard(p, i === 0)));
       sec.appendChild(ol);
     }
-    const devs = [...new Set(((wc && wc.dev) || []).concat((hub && hub.dev) || []))].slice(0, 3);
-    if(devs.length) sec.appendChild(el("div", "devs", "⚠ " + devs.join(" · ")));
     board.appendChild(sec);
   }
 
