@@ -140,6 +140,31 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
 .chip.wait.ok{color:var(--ok);border-color:var(--ok)}
 .chip.res{color:var(--muted);border:1px dashed var(--muted)}
 .hint .act{margin-left:auto;flex:none}
+ol.plans{list-style:none;margin:0;padding:0}
+.pc{padding:14px 16px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+.pc:first-child{border-top:0}
+.pc.best{background:color-mix(in srgb,var(--ok) 9%,transparent)}
+.pc-top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}
+.pc-lab{font-size:.6875rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;display:block}
+.pc-big{font-family:var(--f-mono);font-weight:700;font-size:1.75rem;line-height:1.05;font-variant-numeric:tabular-nums}
+.pc.best .pc-big{font-size:2.125rem}
+.pc-sub{font-size:.875rem;color:var(--muted);margin-top:2px}
+.pc-sub b{color:var(--ink)}
+.pc-tot{text-align:right}
+.pc-tot .pc-big{font-size:1.375rem}
+.pc.best .pc-tot .pc-big{font-size:1.625rem}
+.pc-tot .pc-big small{font-size:.8125rem;margin-left:2px}
+.pc-legs{list-style:none;margin:0;padding:0 0 0 2px;display:flex;flex-direction:column;gap:4px;font-size:.875rem}
+.pc-legs li{display:grid;grid-template-columns:1.5rem minmax(0,1fr) auto;align-items:center;gap:6px}
+.pc-legs .ic{text-align:center}
+.pc-legs .tx{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc-legs .tm{font-family:var(--f-mono);font-weight:700;font-variant-numeric:tabular-nums}
+.pc-legs .mut{color:var(--muted)}
+.pc-legs .ok{color:var(--ok);font-weight:700}
+.pc-legs .badge{display:inline-block;font-size:.8125rem;padding:1px 6px 0;margin-right:4px}
+.pc-legs .badge.t{background:var(--ok)}
+.pc-foot{display:flex;justify-content:flex-end}
+.pc-foot button{font:inherit;font-size:.8125rem;font-weight:700;color:var(--ink);background:transparent;border:1px solid #25D366;border-radius:8px;padding:5px 10px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -539,7 +564,7 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
     const prio = s => { const ord = cfg.hem.filter(x => !x.r).concat(cfg.hem.filter(x => x.r)); return ord.findIndex(x => x.id === s.id); };
     const plans = [];
     buses.forEach(b => {
-      if(b.st === "CANCELLED") return;
+      if(b.st === "CANCELLED" || b.reserve) return;          // bara ordinarie hållplatser, inte reserv
       const okTrips = trips.filter(t => t.arr.getTime() + cfg.walk*60000 <= new Date(b.e).getTime());
       const tr = okTrips[okTrips.length - 1];
       if(!tr) return;
@@ -656,19 +681,53 @@ dialog.sheetdlg::backdrop{background:rgba(0,0,0,.45)}
     }
     const wc = cache[cfg.work.id], hub = cache[HUB.id];
     const plans = jobPlans();
-    const sec = section("Smidigast hem" + (cfg.place ? " från " + cfg.place.split(",")[0].trim() : ""), plans ? lineList(plans) : "");
+    const sec = section("Smidigast hem" + (cfg.place ? " från " + cfg.place.split(",")[0].trim() : ""), "");
     if(!wc || !hub) sec.appendChild(el("div", "empty", "Hämtar…"));
     else if(wc.err || hub.err) sec.appendChild(el("div", "empty", "SL svarade inte för " + (wc.err ? cfg.work.n : "Brommaplan") + ". Tryck Uppdatera om en stund."));
-    else if(!plans || !plans.length) sec.appendChild(el("div", "empty", "Hittar ingen resa via Brommaplan till " + cfg.hem.map(s => s.n).join(", ") + " de närmaste " + FORECAST_MIN + " minuterna."));
+    else if(!plans || !plans.length) sec.appendChild(el("div", "empty", "Hittar ingen resa via Brommaplan till " + cfg.hem.filter(s => !s.r).map(s => s.n).join(", ") + " de närmaste " + FORECAST_MIN + " minuterna."));
     else {
-      const ol = el("ol", "deps");
-      plans.slice(0, 6).forEach((p, i) => { const li = row(p, {ride:true, plan:true}); if(i === 0) li.classList.add("best"); ol.appendChild(li); });
+      const ol = el("ol", "plans");
+      plans.slice(0, 4).forEach((p, i) => ol.appendChild(planCard(p, i === 0)));
       sec.appendChild(ol);
-      sec.appendChild(el("div", "devs", "Tiden till höger är när du ska gå från jobbet. Väntan = tid vid busshållplatsen på Brommaplan efter " + cfg.walk + " min byte."));
     }
     const devs = [...new Set(((wc && wc.dev) || []).concat((hub && hub.dev) || []))].slice(0, 3);
     if(devs.length) sec.appendChild(el("div", "devs", "⚠ " + devs.join(" · ")));
     board.appendChild(sec);
+  }
+
+  function planCard(p, best){
+    const li = el("li", "pc" + (best ? " best" : ""));
+    const leave = p.gs.leaveAt, left = Math.round(p.gs.left), total = Math.round((p.at - leave)/60000);
+    const top = el("div", "pc-top");
+    const L = el("div");
+    L.append(el("span", "pc-lab", best ? "Gå från jobbet" : "Eller gå"), el("div", "pc-big", left <= 0 ? (p.gs.k === "run" && p.gs.txt === "Spring" ? "Spring!" : "Nu") : hm(leave)));
+    const sub = el("div", "pc-sub");
+    if(left > 0){ sub.append(document.createTextNode("om "), el("b", "", left >= 60 ? Math.floor(left/60) + " h " + (left % 60) + " min" : left + " min")); }
+    else sub.textContent = p.gs.txt === "Spring" ? "Spring till " + cfg.work.n : "Gå direkt";
+    L.append(sub);
+    const R = el("div", "pc-tot");
+    const tb = el("div", "pc-big", String(total)); tb.append(el("small", "", "min"));
+    const rs = el("div", "pc-sub"); rs.append(document.createTextNode("framme "), el("b", "", (p.live ? "" : "ca ") + hm(p.at)));
+    R.append(el("span", "pc-lab", "Restid"), tb, rs);
+    top.append(L, R); li.append(top);
+
+    const legs = el("ol", "pc-legs");
+    const leg = (ic, nodes, tm, cls) => { const r = el("li"); r.append(el("span", "ic", ic)); const t = el("span", "tx" + (cls ? " " + cls : "")); t.append(...nodes); r.append(t, el("span", "tm", tm || "")); legs.append(r); };
+    const txt = s => document.createTextNode(s);
+    if(+cfg.work.w) leg("🚶", [txt("Gå till " + cfg.work.n + " · " + cfg.work.w + " min")], "", "mut");
+    const tb2 = el("span", "badge t", (p.tr.m === "METRO" ? "T" : "") + p.tr.l);
+    leg(p.tr.m === "METRO" ? "🚇" : "🚌", [tb2, txt("→ Brommaplan " + (p.tr.live ? "" : "ca ") + hm(p.tr.arr))], hm(new Date(p.tr.e)));
+    const wt = el("span", p.wait <= 3 ? "ok" : "", p.wait <= 1 ? "direkt byte" : "vänta " + p.wait + " min");
+    leg("⏱", [txt("Byte " + cfg.walk + " min · "), wt], "", "mut");
+    const bb = el("span", "badge", p.l);
+    leg("🚌", [bb, txt("→ " + p.alight.n + " " + (p.live ? "" : "ca ") + hm(p.at))], hm(new Date(p.e)));
+    li.append(legs);
+
+    const foot = el("div", "pc-foot");
+    const b = el("button", "", "🚗 Be om skjuts"); b.type = "button"; b.onclick = () => openRide(p);
+    b.setAttribute("aria-label", "Be om skjuts från buss " + p.l + " till " + p.alight.n);
+    foot.append(b); li.append(foot);
+    return li;
   }
 
   function row(d, opt){
