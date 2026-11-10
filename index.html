@@ -287,7 +287,7 @@ ol.plans{list-style:none;margin:0;padding:0}
   // Flyttad till busbuddy.pages.dev. Skicka vidare från github.io och ta med sparade
   // inställningar i #-delen (den skickas aldrig till någon server).
   const NEW_HOME = "https://busbuddy.pages.dev/";
-  const REDIRECT = false;   // Av tills busbuddy.pages.dev publiceras från repot (Cloudflare är inte kopplat till GitHub än)
+  const REDIRECT = true;    // Sätt false för att pausa vidarebefordran från github.io
   if(REDIRECT && /\.github\.io$/i.test(location.hostname)){
     let carry = "";
     try{
