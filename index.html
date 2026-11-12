@@ -473,15 +473,17 @@ ol.plans{list-style:none;margin:0;padding:0}
   // Utresa: bussar som når Brommaplan (slutstation där, eller samma tur avgår senare från Brommaplan).
   function utSections(){
     const hub = cache[HUB.id];
+    const hubOk = !!(hub && !hub.err && hub.tot > 0);   // SL svarar ibland fel/tomt (t.ex. "Quota has been exceeded")
     const shown = [];
     return cfg.ut.map(s => {
       const c = cache[s.id];
       if(!c || c.err || c.tot === 0) return {s, c};
       const all = c.dep.filter(isBus).filter(upcoming).filter(d => {
-        const k = "u|" + s.id + "|" + d.l + "|" + d.dir;
+        const k = "u|" + s.id + "|" + d.l.replace(/[A-Z]+$/, "") + "|" + d.dir;   // 177E räknas som 177
         if(/brommaplan/i.test(d.t)){ teach(k, 1); return true; }
-        if(hub && hub.dep.some(h => sameTrip(h, d) && later(h, d))){ teach(k, 1); return true; }
-        return learn[k] === 1 && minutesUntil(d.e) > 45;     // för långt fram för att synas på Brommaplan än
+        if(hubOk && hub.dep.some(h => sameTrip(h, d) && later(h, d))){ teach(k, 1); return true; }
+        // Inlärd linje: lita på den om Brommaplan saknas i svaret, eller om turen ligger för långt fram för att synas där än
+        return learn[k] === 1 && (!hubOk || minutesUntil(d.e) > 45);
       });
       const deps = all.filter(d => !shown.some(f => d.j && f.j ? sameTrip(f, d) :
         f.l === d.l && (new Date(d.e) - new Date(f.e)) >= 0 && (new Date(d.e) - new Date(f.e)) <= 6*60000));
